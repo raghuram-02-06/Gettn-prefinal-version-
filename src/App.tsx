@@ -80,6 +80,108 @@ export default function App() {
   const [personalCity, setPersonalCity] = useState('');
   const [personalGradYear, setPersonalGradYear] = useState('');
 
+  // OTP Verification States
+  const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [otpCode, setOtpCode] = useState<string>('');
+  const [otpInputs, setOtpInputs] = useState<string[]>(['', '', '', '', '', '']);
+  const [resendTimer, setResendTimer] = useState<number>(0);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpSuccess, setOtpSuccess] = useState<boolean>(false);
+  const [isShaking, setIsShaking] = useState<boolean>(false);
+
+  useEffect(() => {
+    let interval: any;
+    if (resendTimer > 0) {
+      interval = setInterval(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [resendTimer]);
+
+  const getMaskedPhone = (phone: string) => {
+    const cleaned = phone.trim();
+    if (cleaned.length < 4) return cleaned;
+    return cleaned.slice(0, 2) + "******" + cleaned.slice(-2);
+  };
+
+  const getMaskedEmail = (email: string) => {
+    const parts = email.trim().split('@');
+    if (parts.length !== 2) return email;
+    const name = parts[0];
+    const domain = parts[1];
+    const maskedName = name.length > 2 
+      ? name.slice(0, 2) + "****" 
+      : name + "****";
+    return maskedName + "@" + domain;
+  };
+
+  const handleOtpInputChange = (index: number, val: string) => {
+    const cleaned = val.replace(/\D/g, '');
+    if (cleaned.length > 1) {
+      const newInputs = [...otpInputs];
+      for (let i = 0; i < Math.min(6 - index, cleaned.length); i++) {
+        newInputs[index + i] = cleaned[i];
+      }
+      setOtpInputs(newInputs);
+      const targetIdx = Math.min(5, index + cleaned.length);
+      const nextInput = document.getElementById(`otp-input-${targetIdx}`);
+      nextInput?.focus();
+      return;
+    }
+    
+    const newInputs = [...otpInputs];
+    newInputs[index] = cleaned;
+    setOtpInputs(newInputs);
+
+    if (cleaned !== '' && index < 5) {
+      const nextInput = document.getElementById(`otp-input-${index + 1}`);
+      nextInput?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: any) => {
+    if (e.key === 'Backspace') {
+      if (otpInputs[index] === '' && index > 0) {
+        const prevInput = document.getElementById(`otp-input-${index - 1}`);
+        prevInput?.focus();
+        
+        const newInputs = [...otpInputs];
+        newInputs[index - 1] = '';
+        setOtpInputs(newInputs);
+      } else {
+        const newInputs = [...otpInputs];
+        newInputs[index] = '';
+        setOtpInputs(newInputs);
+      }
+    }
+  };
+
+  const handleVerifyOtp = () => {
+    const entered = otpInputs.join('');
+    if (entered.length < 6) return;
+
+    if (entered === otpCode) {
+      setOtpSuccess(true);
+      setOtpError(null);
+      setTimeout(() => {
+        setWizardStep(2);
+        setShowOtpScreen(false);
+      }, 1000);
+    } else {
+      setIsShaking(true);
+      setOtpError("Incorrect OTP. Try again.");
+      setOtpInputs(['', '', '', '', '', '']);
+      setTimeout(() => {
+        const firstInput = document.getElementById('otp-input-0');
+        firstInput?.focus();
+      }, 10);
+      setTimeout(() => {
+        setIsShaking(false);
+      }, 400);
+    }
+  };
+
   // Step 2 - Academics
   const [academicBoard, setAcademicBoard] = useState('');
   const [gradingSystem, setGradingSystem] = useState<'percentage' | 'cgpa'>('percentage');
@@ -191,16 +293,17 @@ export default function App() {
         newErrors.name = 'Name must be at least 2 characters';
       }
 
+      const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail.trim());
       if (!personalEmail.trim()) {
         newErrors.email = 'Email is required';
-      } else if (!/\S+@\S+\.\S+/.test(personalEmail)) {
-        newErrors.email = 'Please enter a valid email address';
+      } else if (!emailValid) {
+        newErrors.email = 'Enter a valid email address';
       }
 
       if (!personalPhone.trim()) {
         newErrors.phone = 'Phone number is required';
-      } else if (!/^[+0-9\s()-]{10,18}$/.test(personalPhone.replace(/\s+/g, ''))) {
-        newErrors.phone = 'Please enter a valid phone number (at least 10 digits)';
+      } else if (personalPhone.trim().length < 10) {
+        newErrors.phone = 'Enter a valid 10-digit mobile number';
       }
 
       if (!personalCity.trim()) {
@@ -305,8 +408,22 @@ export default function App() {
   };
 
   const handleNextStep = () => {
-    if (validateStep(wizardStep)) {
-      setWizardStep(prev => prev + 1);
+    if (wizardStep === 1) {
+      if (validateStep(1)) {
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        setOtpCode(code);
+        console.log("OTP for phone: " + code);
+        console.log("OTP for email: " + code);
+        setOtpInputs(['', '', '', '', '', '']);
+        setOtpError(null);
+        setOtpSuccess(false);
+        setResendTimer(30);
+        setShowOtpScreen(true);
+      }
+    } else {
+      if (validateStep(wizardStep)) {
+        setWizardStep(prev => prev + 1);
+      }
     }
   };
 
@@ -381,6 +498,13 @@ export default function App() {
       setPersonalPhone('');
       setPersonalCity('');
       setPersonalGradYear('');
+      setShowOtpScreen(false);
+      setOtpCode('');
+      setOtpInputs(['', '', '', '', '', '']);
+      setResendTimer(0);
+      setOtpError(null);
+      setOtpSuccess(false);
+      setIsShaking(false);
       setAcademicBoard('');
       setGradingSystem('percentage');
       setAcademicGpa('');
@@ -506,117 +630,227 @@ export default function App() {
                 {/* Wizard Form Area */}
                 <div className="p-8">
                   {wizardStep === 1 && (
-                    <div className="space-y-5" id="wizard-step-1">
-                      <div className="border-b border-slate-100 pb-3 mb-2">
-                        <h2 className="font-semibold text-[#0A0F2C] text-base">Step 1: Personal Details</h2>
-                        <p className="text-xs text-slate-400">Introduce yourself to start your journey.</p>
-                      </div>
+                    <>
+                      {!showOtpScreen ? (
+                        <div className="space-y-5" id="wizard-step-1">
+                          <div className="border-b border-slate-100 pb-3 mb-2">
+                            <h2 className="font-semibold text-[#0A0F2C] text-base">Step 1: Personal Details</h2>
+                            <p className="text-xs text-slate-400">Introduce yourself to start your journey.</p>
+                          </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {/* Name Input */}
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
-                            <User className="w-3.5 h-3.5" /> <span>Full Name <span className="text-rose-500">*</span></span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Aarav Sharma"
-                            value={personalName}
-                            onChange={(e) => {
-                              setPersonalName(e.target.value);
-                              if (errors.name) setErrors(prev => { const c = { ...prev }; delete c.name; return c; });
-                            }}
-                            className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                              errors.name ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
-                            }`}
-                          />
-                          {errors.name && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.name}</span></p>}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            {/* Name Input */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
+                                <User className="w-3.5 h-3.5" /> <span>Full Name <span className="text-rose-500">*</span></span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Aarav Sharma"
+                                value={personalName}
+                                onChange={(e) => {
+                                  setPersonalName(e.target.value);
+                                  if (errors.name) setErrors(prev => { const c = { ...prev }; delete c.name; return c; });
+                                }}
+                                className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                                  errors.name ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
+                                }`}
+                              />
+                              {errors.name && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.name}</span></p>}
+                            </div>
+
+                            {/* Email Input */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
+                                <Mail className="w-3.5 h-3.5" /> <span>Email Address <span className="text-rose-500">*</span></span>
+                              </label>
+                              <input
+                                type="email"
+                                placeholder="e.g. aarav@gmail.com"
+                                value={personalEmail}
+                                onChange={(e) => {
+                                  setPersonalEmail(e.target.value);
+                                  if (errors.email) setErrors(prev => { const c = { ...prev }; delete c.email; return c; });
+                                }}
+                                className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                                  errors.email ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
+                                }`}
+                              />
+                              {errors.email && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.email}</span></p>}
+                            </div>
+
+                            {/* Phone Input */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
+                                <Phone className="w-3.5 h-3.5" /> <span>Phone Number <span className="text-rose-500">*</span></span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 9876543210"
+                                value={personalPhone}
+                                onChange={(e) => {
+                                  let val = e.target.value.replace(/\D/g, '');
+                                  if (val.length > 10) {
+                                    val = val.slice(0, 10);
+                                  }
+                                  setPersonalPhone(val);
+                                  if (errors.phone) setErrors(prev => { const c = { ...prev }; delete c.phone; return c; });
+                                }}
+                                className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                                  errors.phone ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
+                                }`}
+                              />
+                              {errors.phone && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.phone}</span></p>}
+                            </div>
+
+                            {/* City Input */}
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
+                                <MapPin className="w-3.5 h-3.5" /> <span>City of Residence <span className="text-rose-500">*</span></span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Mumbai"
+                                value={personalCity}
+                                onChange={(e) => {
+                                  setPersonalCity(e.target.value);
+                                  if (errors.city) setErrors(prev => { const c = { ...prev }; delete c.city; return c; });
+                                }}
+                                className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                                  errors.city ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
+                                }`}
+                              />
+                              {errors.city && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.city}</span></p>}
+                            </div>
+
+                            {/* Graduation Year Select (2024 - 2030) */}
+                            <div className="space-y-1.5 md:col-span-2">
+                              <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
+                                <Calendar className="w-3.5 h-3.5" /> <span>Target Graduation Year <span className="text-rose-500">*</span></span>
+                              </label>
+                              <select
+                                value={personalGradYear}
+                                onChange={(e) => {
+                                  setPersonalGradYear(e.target.value);
+                                  if (errors.graduationYear) setErrors(prev => { const c = { ...prev }; delete c.graduationYear; return c; });
+                                }}
+                                className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                                  errors.graduationYear ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
+                                }`}
+                              >
+                                <option value="">-- Choose Graduation Year --</option>
+                                {Array.from({ length: 7 }, (_, i) => 2024 + i).map(year => (
+                                  <option key={year} value={year}>{year}</option>
+                                ))}
+                              </select>
+                              {errors.graduationYear && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.graduationYear}</span></p>}
+                            </div>
+                          </div>
                         </div>
+                      ) : (
+                        <div className="space-y-6" id="wizard-step-1-otp">
+                          <style>{`
+                            @keyframes shake {
+                              0%, 100% { transform: translateX(0); }
+                              16%, 48%, 80% { transform: translateX(-6px); }
+                              32%, 64% { transform: translateX(6px); }
+                            }
+                            .animate-shake {
+                              animation: shake 0.4s ease-in-out;
+                            }
+                          `}</style>
+                          <div className="border-b border-slate-100 pb-3 mb-2">
+                            <h2 className="font-semibold text-[#0A0F2C] text-base">Verify your contact details</h2>
+                            <p className="text-xs text-slate-400 mt-1">
+                              Enter the 6-digit code sent to <strong className="text-[#0A0F2C]">{getMaskedPhone(personalPhone)}</strong> and <strong className="text-[#0A0F2C]">{getMaskedEmail(personalEmail)}</strong>
+                            </p>
+                          </div>
 
-                        {/* Email Input */}
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
-                            <Mail className="w-3.5 h-3.5" /> <span>Email Address <span className="text-rose-500">*</span></span>
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="e.g. aarav@gmail.com"
-                            value={personalEmail}
-                            onChange={(e) => {
-                              setPersonalEmail(e.target.value);
-                              if (errors.email) setErrors(prev => { const c = { ...prev }; delete c.email; return c; });
-                            }}
-                            className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                              errors.email ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
-                            }`}
-                          />
-                          {errors.email && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.email}</span></p>}
-                        </div>
-
-                        {/* Phone Input */}
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
-                            <Phone className="w-3.5 h-3.5" /> <span>Phone Number <span className="text-rose-500">*</span></span>
-                          </label>
-                          <input
-                            type="tel"
-                            placeholder="e.g. +91 98765 43210"
-                            value={personalPhone}
-                            onChange={(e) => {
-                              setPersonalPhone(e.target.value);
-                              if (errors.phone) setErrors(prev => { const c = { ...prev }; delete c.phone; return c; });
-                            }}
-                            className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                              errors.phone ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
-                            }`}
-                          />
-                          {errors.phone && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.phone}</span></p>}
-                        </div>
-
-                        {/* City Input */}
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
-                            <MapPin className="w-3.5 h-3.5" /> <span>City of Residence <span className="text-rose-500">*</span></span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Mumbai"
-                            value={personalCity}
-                            onChange={(e) => {
-                              setPersonalCity(e.target.value);
-                              if (errors.city) setErrors(prev => { const c = { ...prev }; delete c.city; return c; });
-                            }}
-                            className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                              errors.city ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
-                            }`}
-                          />
-                          {errors.city && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.city}</span></p>}
-                        </div>
-
-                        {/* Graduation Year Select (2024 - 2030) */}
-                        <div className="space-y-1.5 md:col-span-2">
-                          <label className="text-xs font-semibold text-slate-500 flex items-center space-x-1">
-                            <Calendar className="w-3.5 h-3.5" /> <span>Target Graduation Year <span className="text-rose-500">*</span></span>
-                          </label>
-                          <select
-                            value={personalGradYear}
-                            onChange={(e) => {
-                              setPersonalGradYear(e.target.value);
-                              if (errors.graduationYear) setErrors(prev => { const c = { ...prev }; delete c.graduationYear; return c; });
-                            }}
-                            className={`w-full px-3.5 py-2 text-sm bg-white border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                              errors.graduationYear ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:border-[#0A0F2C] focus:ring-[#0A0F2C]/10'
-                            }`}
-                          >
-                            <option value="">-- Choose Graduation Year --</option>
-                            {Array.from({ length: 7 }, (_, i) => 2024 + i).map(year => (
-                              <option key={year} value={year}>{year}</option>
+                          {/* OTP Boxes Row */}
+                          <div className={`flex justify-center gap-3 py-4 ${isShaking ? 'animate-shake' : ''}`} id="otp-boxes-container">
+                            {otpInputs.map((digit, idx) => (
+                              <input
+                                key={idx}
+                                id={`otp-input-${idx}`}
+                                type="text"
+                                maxLength={1}
+                                value={digit}
+                                onChange={(e) => handleOtpInputChange(idx, e.target.value)}
+                                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                                className="w-12 h-12 text-center text-lg font-bold border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white"
+                              />
                             ))}
-                          </select>
-                          {errors.graduationYear && <p className="text-xs text-rose-500 flex items-center space-x-1 mt-1"><AlertCircle className="w-3 h-3 shrink-0" /> <span>{errors.graduationYear}</span></p>}
+                          </div>
+
+                          {otpError && (
+                            <p className="text-xs text-rose-500 text-center flex items-center justify-center space-x-1 font-semibold" id="otp-error-msg">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> <span>{otpError}</span>
+                            </p>
+                          )}
+
+                          {otpSuccess && (
+                            <p className="text-xs text-emerald-600 text-center flex items-center justify-center space-x-1 font-bold animate-bounce" id="otp-success-msg">
+                              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" /> <span>Verified!</span>
+                            </p>
+                          )}
+
+                          {/* Actions Inside Card */}
+                          <div className="flex flex-col gap-4 items-center pt-2">
+                            <button
+                              type="button"
+                              onClick={handleVerifyOtp}
+                              disabled={otpInputs.join('').length < 6 || otpSuccess}
+                              className={`w-full py-2.5 px-5 text-xs font-bold rounded-lg text-white shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                otpInputs.join('').length < 6 || otpSuccess
+                                  ? 'bg-slate-300 cursor-not-allowed'
+                                  : 'bg-[#0A0F2C] hover:bg-[#1C254C]'
+                              }`}
+                              id="btn-verify-otp"
+                            >
+                              Verify
+                            </button>
+
+                            <div className="flex items-center justify-between w-full text-xs font-semibold px-1 mt-1">
+                              {/* Resend OTP link */}
+                              {resendTimer > 0 ? (
+                                <span className="text-slate-400">Resend in {resendTimer}s</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const code = Math.floor(100000 + Math.random() * 900000).toString();
+                                    setOtpCode(code);
+                                    console.log("OTP for phone: " + code);
+                                    console.log("OTP for email: " + code);
+                                    setOtpInputs(['', '', '', '', '', '']);
+                                    setOtpError(null);
+                                    setOtpSuccess(false);
+                                    setResendTimer(30);
+                                  }}
+                                  className="text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer bg-transparent border-none p-0 font-bold"
+                                  id="btn-resend-otp"
+                                >
+                                  Resend OTP
+                                </button>
+                              )}
+
+                              {/* Back link: Edit details */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowOtpScreen(false);
+                                  setOtpError(null);
+                                }}
+                                className="text-slate-500 hover:text-slate-700 transition-colors cursor-pointer bg-transparent border-none p-0 font-semibold"
+                                id="btn-back-to-step1"
+                              >
+                                Edit details
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      )}
+                    </>
                   )}
 
                   {wizardStep === 2 && (
@@ -1134,42 +1368,44 @@ export default function App() {
                 </div>
 
                 {/* Wizard Navigation Footer */}
-                <div className="bg-slate-50 border-t border-slate-100 px-8 py-5 flex items-center justify-between">
-                  <div>
-                    {wizardStep > 1 && (
-                      <button
-                        type="button"
-                        onClick={handleBackStep}
-                        className="flex items-center space-x-1.5 px-4 py-2 text-xs font-bold text-slate-600 hover:text-[#0A0F2C] hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                        <span>Back</span>
-                      </button>
-                    )}
-                  </div>
+                {!(wizardStep === 1 && showOtpScreen) && (
+                  <div className="bg-slate-50 border-t border-slate-100 px-8 py-5 flex items-center justify-between">
+                    <div>
+                      {wizardStep > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleBackStep}
+                          className="flex items-center space-x-1.5 px-4 py-2 text-xs font-bold text-slate-600 hover:text-[#0A0F2C] hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          <span>Back</span>
+                        </button>
+                      )}
+                    </div>
 
-                  <div>
-                    {wizardStep < 5 ? (
-                      <button
-                        type="button"
-                        onClick={handleNextStep}
-                        className="flex items-center space-x-1.5 px-5 py-2.5 text-xs font-bold bg-[#0A0F2C] hover:bg-[#1A254C] text-white rounded-lg transition-all shadow-sm cursor-pointer"
-                      >
-                        <span>Continue</span>
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleCompleteOnboarding}
-                        className="flex items-center space-x-1.5 px-6 py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-md cursor-pointer"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span>Complete Profile</span>
-                      </button>
-                    )}
+                    <div>
+                      {wizardStep < 5 ? (
+                        <button
+                          type="button"
+                          onClick={handleNextStep}
+                          className="flex items-center space-x-1.5 px-5 py-2.5 text-xs font-bold bg-[#0A0F2C] hover:bg-[#1A254C] text-white rounded-lg transition-all shadow-sm cursor-pointer"
+                        >
+                          <span>Continue</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleCompleteOnboarding}
+                          className="flex items-center space-x-1.5 px-6 py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-md cursor-pointer"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>Complete Profile</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             ) : (
               // Dashboard View when User data is ready!
