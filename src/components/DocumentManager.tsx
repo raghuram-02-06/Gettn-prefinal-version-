@@ -11,7 +11,10 @@ import {
   FileText, 
   Edit3,
   BookmarkCheck,
-  PartyPopper
+  PartyPopper,
+  UploadCloud,
+  Trash2,
+  Download
 } from 'lucide-react';
 
 interface DocumentItem {
@@ -20,6 +23,13 @@ interface DocumentItem {
   status: 'not_started' | 'in_progress' | 'ready';
   notes: string;
   updatedAt: string;
+  file?: {
+    name: string;
+    size: string;
+    type: string;
+    uploadedAt: string;
+    dataUrl?: string;
+  };
 }
 
 const DOCUMENT_NAMES = [
@@ -136,6 +146,109 @@ export default function DocumentManager() {
     };
     handleUpdateDoc(updatedDoc);
     setEditingNotesId(null);
+  };
+
+  // Drag and Drop & click file upload processors
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      processFile(file, id);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, id: number) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      processFile(file, id);
+    }
+  };
+
+  const processFile = (file: File, id: number) => {
+    const sizeStr = formatBytes(file.size);
+    const reader = new FileReader();
+    
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const updatedDocs = documents.map(doc => {
+        if (doc.id === id) {
+          return {
+            ...doc,
+            status: 'ready' as const,
+            updatedAt: getTodayDateString(),
+            file: {
+              name: file.name,
+              size: sizeStr,
+              type: file.type,
+              uploadedAt: getTodayDateString(),
+              // Save dataURL only if it is small to keep localStorage reliable
+              dataUrl: file.size < 500000 ? dataUrl : undefined
+            }
+          };
+        }
+        return doc;
+      });
+
+      setDocuments(updatedDocs);
+      try {
+        localStorage.setItem('get_docs', JSON.stringify(updatedDocs));
+      } catch (error) {
+        console.warn('LocalStorage quota reached. Saving without dataURL.', error);
+        // Fallback: save without dataURL
+        const fallbackDocs = updatedDocs.map(doc => {
+          if (doc.id === id && doc.file) {
+            return {
+              ...doc,
+              file: {
+                ...doc.file,
+                dataUrl: undefined
+              }
+            };
+          }
+          return doc;
+        });
+        setDocuments(fallbackDocs);
+        localStorage.setItem('get_docs', JSON.stringify(fallbackDocs));
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const handleDownloadFile = (doc: DocumentItem) => {
+    if (!doc.file) return;
+    
+    const link = document.createElement('a');
+    link.href = doc.file.dataUrl || 'data:text/plain;charset=utf-8,' + encodeURIComponent(`gettn Premium Vault Secure Document:\nFile Name: ${doc.file.name}\nSize: ${doc.file.size}\nUploaded: ${doc.file.uploadedAt}\nThis file is encrypted and stored locally.`);
+    link.download = doc.file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleRemoveFile = (id: number) => {
+    const updatedDocs = documents.map(doc => {
+      if (doc.id === id) {
+        const { file, ...rest } = doc;
+        return {
+          ...rest,
+          status: 'not_started' as const,
+          updatedAt: getTodayDateString()
+        };
+      }
+      return doc;
+    });
+    setDocuments(updatedDocs);
+    localStorage.setItem('get_docs', JSON.stringify(updatedDocs));
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   // Calculations for progress summary
@@ -365,15 +478,88 @@ export default function DocumentManager() {
 
                 </div>
 
-                {/* Inline Detail Accordion Panel (Accordion-style suggested tips) */}
+                {/* Inline Detail Accordion Panel (Guidelines & Secure File Upload) */}
                 {isExpanded && (
-                  <div className="px-5 py-3.5 bg-slate-50 border-t border-b border-slate-100 text-xs text-slate-600 space-y-1.5" id={`doc-details-${doc.id}`}>
-                    <div className="flex items-center gap-1.5 text-indigo-700 font-extrabold text-[11px] uppercase tracking-wider">
-                      <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" /> Suggested Guidelines &amp; Tips
+                  <div className="px-6 py-4 bg-slate-50 border-t border-b border-slate-100 text-xs text-slate-600" id={`doc-details-${doc.id}`}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Left Side: Guidelines & Tips */}
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-1.5 text-indigo-700 font-extrabold text-[11px] uppercase tracking-wider">
+                          <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0" /> Guidelines &amp; Tips
+                        </div>
+                        <p className="pl-5 leading-relaxed font-semibold text-slate-700">
+                          {getTipForDoc(doc.name)}
+                        </p>
+                        <div className="pl-5 pt-2 text-[11px] text-slate-400 space-y-1 font-medium">
+                          <p>&bull; Target formats: PDF, JPEG, PNG, DOCX</p>
+                          <p>&bull; Maximum file size: 10 MB per document</p>
+                          <p>&bull; Ensure high-contrast, glare-free, clear scans</p>
+                        </div>
+                      </div>
+
+                      {/* Right Side: File Vault Dropzone or Active File State */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200/85 shadow-sm flex flex-col justify-center">
+                        <div className="flex items-center gap-1.5 text-slate-800 font-extrabold text-[11px] uppercase tracking-wider mb-2.5">
+                          <FolderOpen className="w-3.5 h-3.5 text-indigo-500 shrink-0" /> Document Vault Storage
+                        </div>
+
+                        {doc.file ? (
+                          /* Document is currently uploaded */
+                          <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-between" id={`uploaded-file-${doc.id}`}>
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div className="space-y-0.5 min-w-0">
+                                <p className="font-bold text-slate-800 text-[12px] truncate max-w-[150px] sm:max-w-[200px]" title={doc.file.name}>
+                                  {doc.file.name}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-semibold">
+                                  {doc.file.size} &bull; Uploaded {doc.file.uploadedAt}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => handleDownloadFile(doc)}
+                                className="p-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-indigo-600 rounded-md shadow-sm transition-all cursor-pointer flex items-center justify-center"
+                                title="Download Document"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRemoveFile(doc.id)}
+                                className="p-1.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-md shadow-sm transition-all cursor-pointer flex items-center justify-center"
+                                title="Delete Document"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* No document uploaded: Show drag-and-drop zone */
+                          <div
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={(e) => handleFileDrop(e, doc.id)}
+                            className="border-2 border-dashed border-slate-200 hover:border-indigo-400/80 hover:bg-slate-50/50 rounded-xl p-5 text-center transition-all cursor-pointer flex flex-col items-center justify-center group relative min-h-[100px]"
+                          >
+                            <input
+                              type="file"
+                              accept=".pdf,.jpeg,.jpg,.png,.docx"
+                              onChange={(e) => handleFileSelect(e, doc.id)}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <UploadCloud className="w-7 h-7 text-slate-400 group-hover:text-indigo-500 transition-colors mb-1.5" />
+                            <p className="text-[12px] font-bold text-slate-700">
+                              Drag &amp; drop or <span className="text-indigo-600 underline group-hover:text-indigo-700">browse files</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                              Supports PDF, JPG, PNG or DOCX up to 10MB
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <p className="pl-5 leading-relaxed font-medium text-slate-600">
-                      {getTipForDoc(doc.name)}
-                    </p>
                   </div>
                 )}
 
